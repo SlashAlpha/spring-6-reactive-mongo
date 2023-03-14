@@ -77,4 +77,14 @@ public class BeerServiceImpl implements BeerService {
         return beerRepository.deleteById(beerId);
 
     }
+
+    @Override
+    public Mono<BeerDTO> findFirstByBeerName(String beerName) {
+        return beerRepository.findFirstByBeerName(beerName).map(beerMapper::beerToBeerDTO);
+    }
+
+    @Override
+    public Flux<BeerDTO> findByBeerStyle(String beerStyle) {
+        return beerRepository.findByBeerStyle(beerStyle).map(beerMapper::beerToBeerDTO);
+    }
 }
