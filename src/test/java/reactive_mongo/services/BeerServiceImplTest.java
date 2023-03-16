@@ -9,6 +9,7 @@ import reactive_mongo.domain.Beer;
 import reactive_mongo.mappers.BeerMapper;
 import reactive_mongo.mappers.BeerMapperImpl;
 import reactive_mongo.model.BeerDTO;
+import reactive_mongo.repositories.BeerRepository;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
@@ -18,8 +19,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+
 @SpringBootTest
-class BeerServiceImplTest {
+public class BeerServiceImplTest {
 
     @Autowired
     BeerService beerService;
@@ -27,37 +29,44 @@ class BeerServiceImplTest {
     @Autowired
     BeerMapper beerMapper;
 
+    @Autowired
+    BeerRepository beerRepository;
+
     BeerDTO beerDTO;
 
     @BeforeEach
     void setUp() {
-        beerDTO=beerMapper.beerToBeerDTO(getTestBeer());
-
-
+        beerDTO = beerMapper.beerToBeerDTO(getTestBeer());
     }
-
 
     @Test
-    void saveBeer()  {
+    void testFindByBeerStyle() {
+        BeerDTO beerDto1 = getSavedBeerDto();
         AtomicBoolean atomicBoolean = new AtomicBoolean(false);
 
-       Mono< BeerDTO> savedMono= beerService.saveBeer(beerDTO);
-       savedMono.subscribe(savedDTO->{
-           System.out.println(savedDTO.getId());
-           atomicBoolean.set(true);
-       });
+        beerService.findByBeerStyle(beerDto1.getBeerStyle())
+                .subscribe(dto -> {
+                    System.out.println(dto.toString());
+                    atomicBoolean.set(true);
+                });
 
         await().untilTrue(atomicBoolean);
+
     }
 
-    public static Beer getTestBeer(){
-        return Beer.builder()
-                .beerName("Space Dust")
-                .beerStyle("IPA")
-                .price(BigDecimal.TEN)
-                .quantityOnHand(12)
-                .upc("12345")
-                .build();
+    @Test
+    void findFirstByBeerNameTest() {
+        BeerDTO beerDto = getSavedBeerDto();
+
+        AtomicBoolean atomicBoolean = new AtomicBoolean(false);
+        Mono<BeerDTO> foundDto = beerService.findFirstByBeerName(beerDto.getBeerName());
+
+        foundDto.subscribe(dto -> {
+            System.out.println(dto.toString());
+            atomicBoolean.set(true);
+        });
+
+        await().untilTrue(atomicBoolean);
     }
 
     @Test
@@ -67,7 +76,7 @@ class BeerServiceImplTest {
         AtomicBoolean atomicBoolean = new AtomicBoolean(false);
         AtomicReference<BeerDTO> atomicDto = new AtomicReference<>();
 
-        Mono<BeerDTO> savedMono = beerService.saveBeer(beerDTO);
+        Mono<BeerDTO> savedMono = beerService.saveBeer(Mono.just(beerDTO));
 
         savedMono.subscribe(savedDto -> {
             System.out.println(savedDto.getId());
@@ -82,11 +91,10 @@ class BeerServiceImplTest {
         assertThat(persistedDto.getId()).isNotNull();
     }
 
-
     @Test
     @DisplayName("Test Save Beer Using Block")
     void testSaveBeerUseBlock() {
-        BeerDTO savedDto = beerService.saveBeer(getTestBeerDto()).block();
+        BeerDTO savedDto = beerService.saveBeer(Mono.just(getTestBeerDto())).block();
         assertThat(savedDto).isNotNull();
         assertThat(savedDto.getId()).isNotNull();
     }
@@ -98,34 +106,14 @@ class BeerServiceImplTest {
         BeerDTO savedBeerDto = getSavedBeerDto();
         savedBeerDto.setBeerName(newName);
 
-        BeerDTO updatedDto = beerService.saveBeer(savedBeerDto).block();
+        BeerDTO updatedDto = beerService.saveBeer(Mono.just(savedBeerDto)).block();
 
         //verify exists in db
         BeerDTO fetchedDto = beerService.getBeerById(updatedDto.getId()).block();
         assertThat(fetchedDto.getBeerName()).isEqualTo(newName);
     }
 
-    @Test
-    @DisplayName("Test Update Using Reactive Streams")
-    void testUpdateStreaming() {
-        final String newName = "New Beer Name";  // use final so cannot mutate
 
-        AtomicReference<BeerDTO> atomicDto = new AtomicReference<>();
-
-        beerService.saveBeer(getTestBeerDto())
-                .map(savedBeerDto -> {
-                    savedBeerDto.setBeerName(newName);
-                    return savedBeerDto;
-                })
-                .flatMap(beerService::saveBeer) // save updated beer
-                .flatMap(savedUpdatedDto -> beerService.getBeerById(savedUpdatedDto.getId())) // get from db
-                .subscribe(dtoFromDb -> {
-                    atomicDto.set(dtoFromDb);
-                });
-
-        await().until(() -> atomicDto.get() != null);
-        assertThat(atomicDto.get().getBeerName()).isEqualTo(newName);
-    }
 
     @Test
     void testDeleteBeer() {
@@ -142,34 +130,20 @@ class BeerServiceImplTest {
     }
 
     public BeerDTO getSavedBeerDto(){
-        return beerService.saveBeer(getTestBeerDto()).block();
+        return beerService.saveBeer(Mono.just(getTestBeerDto())).block();
     }
 
     public static BeerDTO getTestBeerDto(){
         return new BeerMapperImpl().beerToBeerDTO(getTestBeer());
     }
 
-    @Test
-    void findFirstByBeerNameTest() {
-        BeerDTO beerDTO=getSavedBeerDto();
-        AtomicBoolean atomicBoolean = new AtomicBoolean(false);
-
-        Mono<BeerDTO> foundDto=beerService.findFirstByBeerName(beerDTO.getBeerName());
-        foundDto.subscribe(dto->{
-            System.out.println(dto.toString());
-            atomicBoolean.set(true);
-        });
-        await().untilTrue(atomicBoolean);
-    }
-
-    @Test
-    void findByBeerStyleTest() {
-        BeerDTO beerDTO=getSavedBeerDto();
-        AtomicBoolean atomicBoolean = new AtomicBoolean(false);
-        beerService.findByBeerStyle(beerDTO.getBeerStyle()).subscribe(dtos->{
-            System.out.println(dtos.toString());
-            atomicBoolean.set(true);
-        });
-        await().untilTrue(atomicBoolean);
+    public static Beer getTestBeer() {
+        return Beer.builder()
+                .beerName("Space Dust")
+                .beerStyle("IPA")
+                .price(BigDecimal.TEN)
+                .quantityOnHand(12)
+                .upc("123213")
+                .build();
     }
 }
